@@ -1,0 +1,143 @@
+---
+title: "Regression Models Project"
+author: "Howard Murray"
+date: "August 29, 2024"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, warning = TRUE, message = FALSE)
+```
+
+# Executive Summary
+
+As part of my assignment for *Motor Trend* magazine, I was tasked with reviewing a data set on a collection of cars and exploring the relationship between a set of variables and their impact on miles per gallon (MGP). Of particular interest are the following two questions:  
+
+1. Is an automatic or manual transmission better for MPG? 
+2. What is the average difference in MPG between automatic and manual transmissions? 
+
+Using a combination of inferential statistics and linear regression I determined that: 
+
+- **Manual Transmission is better for MPG.** 
+- **The average difference in MPG between vehicles observed with manual and automatic transmissions is 7.245 mi/gal.** 
+
+Further analysis to support my conclusions are listed in the remaining pages below. 
+
+# Exploratory Analysis of the mtcars Data Set 
+
+```{r, fig.align= "center", fig.height=4, fig.width=4, echo=TRUE}
+
+data("mtcars")
+str(mtcars)
+
+# Modify some of the numerical variables into factors to make for meaningful analysis.
+mtcars <- within(mtcars, {
+  vs <- factor(vs, labels = c("V", "S"))
+  am <- factor(am, labels = c("Automatic", "Manual"))
+  cyl <- ordered(cyl)
+  gear <- ordered(gear)
+  carb <- ordered(carb)
+})
+
+```  
+Initially, all of the variables were numeric. For variables like hp (horsepower), qsec (1/4 mile time in seconds) and wt (weight), this makes sense, but for other variables like 'vs', 'am', 'cyl', 'gear', and 'card', it makes more sense to consider them factors. From the boxplot, we can see that the vehicles with manual transmission have higher MPG on average. 
+
+```{r, fig.align= "center", fig.height=4, fig.width=4, echo=TRUE}
+library(tidyverse)
+library(hrbrthemes)
+library(viridis)
+
+# Generate boxplot to see relationship between MPG and Automatic vs. Manual transmission
+mtcars %>% 
+  ggplot(aes(am, mpg, fill = am)) +
+  geom_boxplot() +
+  #scale_fill_viridis(discrete = TRUE, alpha = 0.5) +
+  geom_jitter(color = "blue", alpha = 0.8) +
+  #theme_ipsum() +
+  facet_wrap(~am) +
+  theme(
+    legend.position = "none") +
+  ggtitle("MPG by Transmission Type") +
+  xlab("Transmission Type")
+
+autoData <- mtcars[mtcars$am == "Automatic",]
+manualData <- mtcars[mtcars$am == "Manual",]
+amdiff <- round(mean(manualData$mpg) - mean(autoData$mpg), 3)
+
+```
+The average difference in MPG between cars with manual transmissions versus those with automatic transmission is given by $MPG_{manual} - MPG_{auto} =$ `r amdiff`. Is this difference statistically significant? I employed the **t.test** function to validate this difference. The resulting **p-value = 0.0006868** is less than 0.05, therefore we reject the null hypothesis and confirm that the difference in means of the two populations (automatic and manual transmissions) is statistically significant.  
+```{r, fig.align= "center", fig.height=4, fig.width=4, echo=TRUE}
+t.test(manualData$mpg, autoData$mpg, alternative = c("greater"))
+```  
+
+# Regression Analysis 
+It was just proven that that a relationship exists between mpg and transmission (automatic vs. manual). This is displayed via linear regression using the **lm** function expressed in the form: $MPG = \beta_0+\beta_1*am$ or $MPG = 17.147+7.245am$. 
+
+```{r, fig.align= "center", fig.height=4, fig.width=4, echo=TRUE}
+library(ggplot2)
+
+# Linear regression model relating mpg to the variable am.
+fit <- lm(mtcars$mpg ~ mtcars$am)
+summary(fit)
+# Gather residuals
+e <- resid(fit)
+# Sum of residuals should equal or be nearly zero
+resid.sum <- sum(e)
+resid.sum
+```
+
+One property of residuals is that the sum of the residuals equals zero if an intercept is included. This model passes this check as the sum of residuals equals `r resid.sum` (very, very near zero). $Pvalue_{am}=0.000285$ says that the transmission type (Automatic vs. Manual) is a significant variable in the MPG model. While this model shown to provide some statistical support for MPG performance, an $R^2=0.3598$ says that only 36% of the MPG's variability is explained by this model. We need a better model that uses more of the variables on the data set. 
+
+Similar to the first model, we should plot the data to see if we can visualize any relationships between the output (MPG) and the various inputs variables. **pairs** is a good way to see multiple relationships simultaneously. 
+
+```{r, fig.align= "center", fig.height=4, fig.width=6, echo=TRUE}
+data("mtcars")
+pairs(mtcars)
+# Compute the correlation for variables in mtcars to see how they align with the visualization.
+sort(cor(mtcars)[1,])
+
+```
+
+## Multiple Regression 
+Looking at the plot, one can observe some potential negative and positive relationships between MPG and the other variables. For example: cyl, disp, hp, and wt all appear to have a negative correlation to MPG. While drat and qsec appear to have a positive correlation to MPG. There are also intuitive relationships, like as horsepower increases, qsec decreases. The correlation values support what is displayed in the graph. Start with a model using all of the provided variables as inputs to explain the output, MPG. 
+
+```{r, fig.align= "center", fig.height=4, fig.width=4, echo=TRUE}
+library(car)
+fit2 <- lm(mpg ~., mtcars)
+summary(fit2)
+vif(fit2)
+
+```
+
+When I use all of the variables in the data set, I get a very non-functional model as all of the variable p-values are much greater than 0.05. It is apparent that there was a high degree of correlation between some of the predictor variables as mentioned in the paragraph above. Computing the Variable Inflation Factor (VIF) of each variable confirmed this suspicion. The rule of thumb is that any variable with VIF > 5 is red flag pointing to potentially severe correlation between predictor variables. **cyl**, **disp**, **hp**, **wt**, **qsec**, **gear**, and **carb** each have VIF above this threshold.  Let's remove them from our model and see how the new model stacks up. 
+```{r, fig.align= "center", fig.height=4, fig.width=4, echo=TRUE}
+#New model after removing the highly correlated predictor variables
+fit3 <- lm(mpg ~ drat + vs + am, mtcars)
+
+#Compute summary statistics of new model
+summary(fit3)
+
+#Compute VIF of new model
+vif(fit3)
+
+```
+
+This model shows much more promise than the model with all of the variables included. The p-values for **vs** and **am** are well below 0.05 and the **Adjusted R-squared** value of 0.6657 is much improved even over the previous model. Also all of the VIF's in this model are less than 5. The **F-statistic is equal to 21.58** with **28 degrees of freedom** and a **p-value of 1.922e-07**. As a final check, I will perform some residual analysis. 
+
+### Residual Analysis 
+Now that the best fitting model has been selected, residual analysis needs to be run to ensure that the residuals are normally distributed, there are no signs heteroskedasticity, outliers or influential data points. I performed these diagnostic checks by plotting the residuals. Observations are listed below. 
+
+- **Residuals vs Fitted** - The residuals appear to follow a linear pattern. **GOOD** 
+- **Q-Q Residuals** - Residuals follow a normal distribution. **GOOD** 
+- **Scale-Location** - The residuals appear to demonstrate constant variance (no pattern or signs of heteroskedasticity). **GOOD**  
+- **Residuals vs. Leverage** - All points are within the dashed lines. No signs of influential data points or outliers. **GOOD** 
+
+```{r, fig.align= "center", fig.height=4, fig.width=4, echo=TRUE}
+par(mfrow = c(2,2))
+# Generate residual plots of fit3
+plot(fit3)
+```
+
+Based on the above, I conclude that this is an acceptable model to describe MPG performance for the mtcars data set. 
